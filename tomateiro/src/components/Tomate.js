@@ -20,7 +20,7 @@ export class Tomate extends THREE.Group {
 
     this.corVerde = new THREE.Color(COLORS.TOMATO_GREEN || '#55a630');
     this.corVermelha = new THREE.Color('#d90429');
-    this.corPodre = new THREE.Color('#3d1e16'); // Castanho escuro / podre
+    this.corPodre = new THREE.Color('#3d1e16');
 
     this.mat = new THREE.MeshStandardMaterial({ 
       color: this.corVerde.clone(), 
@@ -35,12 +35,15 @@ export class Tomate extends THREE.Group {
     this.position.copy(this.posicaoOrigem);
     this.scale.set(0, 0, 0);
 
-    this.tempoPosMaturidade = 0;
+    this.tempoCiclo = 0;
+    this.primeiroCiclo = true; // Controla a transição do primeiro crescimento da planta
     this.offsetQuedaY = 0;
+    this.estaCaindo = false;
     this.noChao = false;
   }
 
   atualizar(progressoGalho, delta = 0) {
+    // 1. Crescimento inicial da planta
     if (progressoGalho < 1) {
       if (progressoGalho > 0.4) {
         const p = Math.min(1, (progressoGalho - 0.4) * 1.6);
@@ -50,22 +53,20 @@ export class Tomate extends THREE.Group {
       return;
     }
 
-    // Galho 100% desenvolvido
-    this.tempoPosMaturidade += delta;
+    const TEMPO_CRESCER_VERDE = 0.20; // 1 ciclo brotando verde
+    const TEMPO_AMADURECER = 0.40;    // 2 ciclos amadurecendo
+    const TEMPO_APODRECER = 0.60;     // 3 ciclos apodrecendo
 
-    const ESPERA_AMADURECER = 0.40; // 2 ciclos solares maduro
-    const ESPERA_APODRECER = 0.80;  // 2 ciclos apodrecendo
+    // Transição da primeira crescida: pula a fase de re-brota verde e amadurecimento
+    if (this.primeiroCiclo) {
+      this.primeiroCiclo = false;
+      this.tempoCiclo = TEMPO_CRESCER_VERDE + TEMPO_AMADURECER; 
+    }
 
-    if (this.tempoPosMaturidade < ESPERA_AMADURECER) {
-      this.mat.color.copy(this.corVermelha);
-    } else if (this.tempoPosMaturidade < ESPERA_APODRECER) {
-      // Apodrece mudando para castanho escuro
-      const pPodre = (this.tempoPosMaturidade - ESPERA_AMADURECER) / (ESPERA_APODRECER - ESPERA_AMADURECER);
-      this.mat.color.lerpColors(this.corVermelha, this.corPodre, pPodre);
-    } else {
-      // Tomate podre cai
-      this.mat.color.copy(this.corPodre);
+    // 2. Ciclo contínuo do fruto
+    this.tempoCiclo += delta;
 
+    if (this.estaCaindo) {
       if (!this.noChao) {
         this.offsetQuedaY += 0.015;
         this.position.y = this.posicaoOrigem.y - this.offsetQuedaY;
@@ -74,19 +75,43 @@ export class Tomate extends THREE.Group {
           this.noChao = true;
         }
       } else {
-        // Sumir no chão e renascer novo fruto verde
         this.mat.opacity -= 0.02;
-
         if (this.mat.opacity <= 0) {
           this.resetarTomate();
         }
       }
+      return;
+    }
+
+    // Fase 1: Broto verde novo nascendo (nas gerações seguintes)
+    if (this.tempoCiclo < TEMPO_CRESCER_VERDE) {
+      const p = this.tempoCiclo / TEMPO_CRESCER_VERDE;
+      this.scale.setScalar(p);
+      this.mat.color.copy(this.corVerde);
+    }
+    // Fase 2: Amadurecendo até ficar vermelho
+    else if (this.tempoCiclo < TEMPO_CRESCER_VERDE + TEMPO_AMADURECER) {
+      this.scale.setScalar(1);
+      const pVermelho = (this.tempoCiclo - TEMPO_CRESCER_VERDE) / TEMPO_AMADURECER;
+      this.mat.color.lerpColors(this.corVerde, this.corVermelha, pVermelho);
+    }
+    // Fase 3: Apodrecendo (Vermelho -> Castanho Escuro)
+    else if (this.tempoCiclo < TEMPO_CRESCER_VERDE + TEMPO_AMADURECER + TEMPO_APODRECER) {
+      this.scale.setScalar(1);
+      const pPodre = (this.tempoCiclo - (TEMPO_CRESCER_VERDE + TEMPO_AMADURECER)) / TEMPO_APODRECER;
+      this.mat.color.lerpColors(this.corVermelha, this.corPodre, pPodre);
+    }
+    // Fase 4: Cai do galho
+    else {
+      this.estaCaindo = true;
     }
   }
 
   resetarTomate() {
-    this.tempoPosMaturidade = 0;
+    this.tempoCiclo = 0;
+    this.primeiroCiclo = false;
     this.offsetQuedaY = 0;
+    this.estaCaindo = false;
     this.noChao = false;
     this.position.copy(this.posicaoOrigem);
     this.mat.opacity = 1;

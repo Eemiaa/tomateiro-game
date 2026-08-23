@@ -8,11 +8,21 @@ export class Planta extends THREE.Group {
     super();
 
     this.progresso = 0;
+    this.nivelAgua = 50; // Começa com 100% de água
     this.galhos = [];
 
     this._criarVasoETerra();
     this._criarCaule();
     this._criarGalhos();
+  }
+
+  regar(quantidade) {
+    this.nivelAgua = Math.min(100, this.nivelAgua + quantidade);
+  }
+
+  evaporarAgua(delta) {
+    // Perde água conforme os ciclos do sol passam
+    this.nivelAgua = Math.max(0, this.nivelAgua - delta * 50);
   }
 
   _criarVasoETerra() {
@@ -28,9 +38,10 @@ export class Planta extends THREE.Group {
   _criarGalhos() {
     const alturaTronco = this.stem.altura || 1.2;
     const alturaMin = 0.25;
-    const alturaMax = alturaTronco - 0.15;
+    const alturaMax = alturaTronco;
 
-    const totalGalhos = Math.floor((alturaTronco - alturaMin) / alturaMin)-1;
+    const totalGalhos = Math.floor((alturaTronco - alturaMin) / alturaMin) ;
+    console.log(totalGalhos)
   
     for (let i = 0; i < totalGalhos; i++) {
       const t = i / (totalGalhos - 1);
@@ -43,13 +54,24 @@ export class Planta extends THREE.Group {
   }
 
   crescer(delta) {
-    // 1. O progresso físico da estrutura (tamanho de caule e galhos) é limitado em 1.0
+    // 1. Evapora a água gradualmente
+    this.evaporarAgua(delta);
+
+    // 2. Se não tiver água (> 0), A PLANTA NÃO CRESCE e murcha
+    if (this.nivelAgua <= 0) {
+      this.rotation.x = THREE.MathUtils.lerp(this.rotation.x, 0.15, 0.05); // Caule murcha caído
+      return; 
+    } else {
+      this.rotation.x = THREE.MathUtils.lerp(this.rotation.x, 0, 0.05); // Ergue normal
+    }
+
+    // 3. O progresso físico da estrutura (tamanho de caule e galhos) é limitado em 1.0
     this.progresso = Math.min(1.0, this.progresso + delta);
 
-    // 2. Atualiza os componentes estruturais
+    // 4. Atualiza os componentes estruturais
     this.stem.atualizar(this.progresso);
     
-    // 3. Os galhos continuam recebendo o 'delta' do Sol para alimentar o ciclo de vida
+    // 5. Os galhos continuam recebendo o 'delta' do Sol para alimentar o ciclo de vida
     this.galhos.forEach(galho => galho.atualizar(this.progresso, delta));
   }
 }
