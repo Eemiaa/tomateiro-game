@@ -6,14 +6,17 @@ export class Tomate extends THREE.Group {
     super();
 
     this.posicaoOrigem = new THREE.Vector3(x, y, z);
+    this.userData.tomate = this; // Identificador para a colheita
 
-    // Cabinho
+    // 1. Cabinho
     const cabinhoGeo = new THREE.CylinderGeometry(0.003, 0.003, 0.04, 6);
     cabinhoGeo.translate(0, -0.02, 0);
     const cabinhoMat = new THREE.MeshStandardMaterial({ color: COLORS.STEM, roughness: 0.8 });
-    this.add(new THREE.Mesh(cabinhoGeo, cabinhoMat));
+    this.cabinho = new THREE.Mesh(cabinhoGeo, cabinhoMat);
+    this.cabinho.userData.tomate = this;
+    this.add(this.cabinho);
 
-    // Fruto
+    // 2. Fruto (Tomate)
     const raio = 0.065;
     const geo = new THREE.SphereGeometry(raio, 12, 10);
     geo.translate(0, -0.04 - raio * 0.7, 0);
@@ -30,43 +33,55 @@ export class Tomate extends THREE.Group {
     });
 
     this.mesh = new THREE.Mesh(geo, this.mat);
+    this.mesh.userData.tomate = this; 
     this.add(this.mesh);
 
     this.position.copy(this.posicaoOrigem);
     this.scale.set(0, 0, 0);
 
     this.tempoCiclo = 0;
-    this.primeiroCiclo = true; // Controla a transição do primeiro crescimento da planta
+    this.primeiroCiclo = true;
     this.offsetQuedaY = 0;
     this.estaCaindo = false;
     this.noChao = false;
+    this.estaMaduro = false;
+  }
+
+  podeSerColhido() {
+    return this.estaMaduro && !this.estaCaindo && !this.noChao;
+  }
+
+  colher() {
+    this.resetarTomate();
   }
 
   atualizar(progressoGalho, delta = 0) {
-    // 1. Crescimento inicial da planta
+    // Crescimento inicial da planta
     if (progressoGalho < 1) {
       if (progressoGalho > 0.4) {
         const p = Math.min(1, (progressoGalho - 0.4) * 1.6);
         this.scale.setScalar(p);
         this.mat.color.lerpColors(this.corVerde, this.corVermelha, p);
+        if (p >= 0.9) this.estaMaduro = true;
       }
       return;
     }
 
-    const TEMPO_CRESCER_VERDE = 0.20; // 1 ciclo brotando verde
-    const TEMPO_AMADURECER = 0.40;    // 2 ciclos amadurecendo
-    const TEMPO_APODRECER = 0.60;     // 3 ciclos apodrecendo
+    // Estágios do ciclo de vida
+    const TEMPO_BROTAR = 0.20;     // Brota verde
+    const TEMPO_AMADURECER = 0.30; // Fica vermelho
+    const TEMPO_MADURO = 0.80;     // FICA MADURO E VERMELHO (Tempo de sobra para colher!)
+    const TEMPO_APODRECER = 0.40;  // Começa a apodrecer
 
-    // Transição da primeira crescida: pula a fase de re-brota verde e amadurecimento
     if (this.primeiroCiclo) {
       this.primeiroCiclo = false;
-      this.tempoCiclo = TEMPO_CRESCER_VERDE + TEMPO_AMADURECER; 
+      this.tempoCiclo = TEMPO_BROTAR + TEMPO_AMADURECER;
     }
 
-    // 2. Ciclo contínuo do fruto
     this.tempoCiclo += delta;
 
     if (this.estaCaindo) {
+      this.estaMaduro = false;
       if (!this.noChao) {
         this.offsetQuedaY += 0.015;
         this.position.y = this.posicaoOrigem.y - this.offsetQuedaY;
@@ -83,26 +98,41 @@ export class Tomate extends THREE.Group {
       return;
     }
 
-    // Fase 1: Broto verde novo nascendo (nas gerações seguintes)
-    if (this.tempoCiclo < TEMPO_CRESCER_VERDE) {
-      const p = this.tempoCiclo / TEMPO_CRESCER_VERDE;
+    const t1 = TEMPO_BROTAR;
+    const t2 = t1 + TEMPO_AMADURECER;
+    const t3 = t2 + TEMPO_MADURO;
+    const t4 = t3 + TEMPO_APODRECER;
+
+    // FASE 1: Broto verde
+    if (this.tempoCiclo < t1) {
+      const p = this.tempoCiclo / t1;
       this.scale.setScalar(p);
       this.mat.color.copy(this.corVerde);
+      this.estaMaduro = false;
     }
-    // Fase 2: Amadurecendo até ficar vermelho
-    else if (this.tempoCiclo < TEMPO_CRESCER_VERDE + TEMPO_AMADURECER) {
+    // FASE 2: Amadurecendo
+    else if (this.tempoCiclo < t2) {
       this.scale.setScalar(1);
-      const pVermelho = (this.tempoCiclo - TEMPO_CRESCER_VERDE) / TEMPO_AMADURECER;
-      this.mat.color.lerpColors(this.corVerde, this.corVermelha, pVermelho);
+      const p = (this.tempoCiclo - t1) / TEMPO_AMADURECER;
+      this.mat.color.lerpColors(this.corVerde, this.corVermelha, p);
+      this.estaMaduro = p > 0.6;
     }
-    // Fase 3: Apodrecendo (Vermelho -> Castanho Escuro)
-    else if (this.tempoCiclo < TEMPO_CRESCER_VERDE + TEMPO_AMADURECER + TEMPO_APODRECER) {
+    // FASE 3: Totalmente Maduro e Vermelho (Disponível para colheita)
+    else if (this.tempoCiclo < t3) {
       this.scale.setScalar(1);
-      const pPodre = (this.tempoCiclo - (TEMPO_CRESCER_VERDE + TEMPO_AMADURECER)) / TEMPO_APODRECER;
-      this.mat.color.lerpColors(this.corVermelha, this.corPodre, pPodre);
+      this.mat.color.copy(this.corVermelha);
+      this.estaMaduro = true;
     }
-    // Fase 4: Cai do galho
+    // FASE 4: Apodrecendo
+    else if (this.tempoCiclo < t4) {
+      this.scale.setScalar(1);
+      const p = (this.tempoCiclo - t3) / TEMPO_APODRECER;
+      this.mat.color.lerpColors(this.corVermelha, this.corPodre, p);
+      this.estaMaduro = false;
+    }
+    // FASE 5: Cai no chão
     else {
+      this.estaMaduro = false;
       this.estaCaindo = true;
     }
   }
@@ -113,6 +143,7 @@ export class Tomate extends THREE.Group {
     this.offsetQuedaY = 0;
     this.estaCaindo = false;
     this.noChao = false;
+    this.estaMaduro = false;
     this.position.copy(this.posicaoOrigem);
     this.mat.opacity = 1;
     this.mat.color.copy(this.corVerde);
